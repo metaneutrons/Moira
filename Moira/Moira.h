@@ -9,6 +9,7 @@
 
 #include "MoiraConfig.h"
 #include "MoiraTypes.h"
+#include "MoiraFPU.h"
 #include "MoiraDebugger.h"
 
 namespace moira {
@@ -644,6 +645,10 @@ private:
     
     // Validates extension words for FPU-related instructions
     bool isValidExtFPU(Instr I, Mode M, u16 op, u32 ext) const;
+
+    // FPU helper: read source operand into extended precision register
+    template <Core C, Mode M, Size S>
+    void fpReadSource(u16 opcode, u32 ext, Registers::FPReg &src);
     
     
     //
