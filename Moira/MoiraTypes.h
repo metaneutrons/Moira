@@ -308,6 +308,13 @@ struct Registers {
     // Unemulated registers
     u32 cacr;                   // Cache Control Register           (68020+)
     u32 caar;                   // Cache Address Register           (68020+)
+
+    // FPU registers (68881/68882/68040)
+    // 80-bit extended precision stored as sign+exponent (u16) + mantissa (u64)
+    struct FPReg { u16 exp = 0; u64 mantissa = 0; } fp[8];
+    u32 fpcr  = 0;              // FP Control Register
+    u32 fpsr  = 0;              // FP Status Register
+    u32 fpiar = 0;              // FP Instruction Address Register
 };
 
 struct PrefetchQueue {
