@@ -491,8 +491,35 @@ template <Core C, Instr I, Mode M, Size S> void
 Moira::execFRestore(u16 opcode)
 {
     if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
-    // TODO: Implement FRESTORE
-    (void)readI<C, Word>();
+
+    // FRESTORE: restore FPU state from memory
+    // Frame format (from Motorola M68000 Family Programmer's Reference Manual):
+    //   First long: [version:8][size:8][reserved:16]
+    //   If size == 0: null frame (FPU reset to idle)
+    //   If size > 0: idle/busy frame (internal state follows)
+
+    int src = _____________xxx(opcode);
+    u32 ea = computeEA<C, M, Long>(src);
+
+    u32 header = readM<C, M, Long>(ea);
+    u8 frameSize = (u8)((header >> 16) & 0xFF);
+
+    if (frameSize == 0x00) {
+        // Null frame: reset FPU to idle state
+        for (int i = 0; i < 8; i++) { reg.fp[i].exp = 0; reg.fp[i].mantissa = 0; }
+        reg.fpcr = 0;
+        reg.fpsr = 0;
+        reg.fpiar = 0;
+        if constexpr (M == Mode::PI) { writeA(src, ea + 4); }
+    } else {
+        // Idle or busy frame: skip the internal state bytes
+        // The FP data registers are NOT part of the frame — they're saved
+        // separately via FMOVEM. FSAVE only saves internal pipeline state.
+        // For our implementation, we just consume the frame and keep current state.
+        u32 totalSize = 4 + (u32)frameSize;
+        if constexpr (M == Mode::PI) { writeA(src, ea + totalSize); }
+    }
+
     prefetch<C, POLL>();
     CYCLES_68020(4)
     FINALIZE
@@ -503,8 +530,55 @@ Moira::execFSave(u16 opcode)
 {
     if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
     SUPERVISOR_MODE_ONLY
-    // TODO: Implement FSAVE
-    (void)readI<C, Word>();
+
+    // FSAVE: save FPU internal state to memory
+    // We generate a minimal idle frame since our FPU has no pending exceptions.
+    //
+    // 68040 idle frame: 4 bytes (just the header)
+    //   [version:8][0x00:8][0x0000:16]
+    //
+    // 68881/68882 idle frame: 28 bytes (header + 24 bytes internal state)
+    //   [version:8][0x18:8][0x0000:16] + 24 bytes of zeros
+
+    int dst = _____________xxx(opcode);
+
+    // Determine frame format based on CPU model
+    bool is040 = (cpuModel == Model::M68040 || cpuModel == Model::M68EC040 || cpuModel == Model::M68LC040);
+
+    if (is040) {
+        // 68040: 4-byte idle frame
+        u32 header = 0x41000000;  // version=$41, size=0 (idle)
+        u32 ea = computeEA<C, M, Long>(dst);
+        if constexpr (M == Mode::PD) {
+            ea -= 4;
+            writeM<C, M, Long>(ea, header);
+            writeA(dst, ea);
+        } else {
+            writeM<C, M, Long>(ea, header);
+        }
+    } else {
+        // 68881/68882: 28-byte idle frame
+        u32 frameSize = 0x18;  // 24 bytes of internal state
+        u32 header = (0x1F << 24) | (frameSize << 16);  // version=$1F
+
+        if constexpr (M == Mode::PD) {
+            u32 ea = readA(dst);
+            ea -= 4 + frameSize;
+            writeM<C, M, Long>(ea, header);
+            // Write 24 bytes of zeros (internal state — we have none)
+            for (u32 i = 4; i < 4 + frameSize; i += 4) {
+                writeM<C, M, Long>(ea + i, 0);
+            }
+            writeA(dst, ea);
+        } else {
+            u32 ea = computeEA<C, M, Long>(dst);
+            writeM<C, M, Long>(ea, header);
+            for (u32 i = 4; i < 4 + frameSize; i += 4) {
+                writeM<C, M, Long>(ea + i, 0);
+            }
+        }
+    }
+
     prefetch<C, POLL>();
     CYCLES_68020(4)
     FINALIZE
