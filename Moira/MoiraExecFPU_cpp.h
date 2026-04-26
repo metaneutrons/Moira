@@ -338,6 +338,9 @@ Moira::execFMovecr(u16 opcode)
 // FBcc: Branch on FPU condition
 // ---------------------------------------------------------------------------
 
+// Forward declaration
+static bool evalFPCond(u32 fpsr, u8 cond);
+
 template <Core C, Instr I, Mode M, Size S> void
 Moira::execFBcc(u16 opcode)
 {
@@ -354,50 +357,7 @@ Moira::execFBcc(u16 opcode)
 
     reg.fpiar = reg.pc0;
 
-    // Evaluate FPU condition from FPSR condition codes
-    bool taken = false;
-    u32 cc = reg.fpsr & FPSR::CC_MASK;
-    bool N = cc & FPSR::CC_N;
-    bool Z = cc & FPSR::CC_Z;
-    bool Inf = cc & FPSR::CC_I;
-    bool NaN = cc & FPSR::CC_NAN;
-
-    switch (cond & 0x1F) {
-        case 0x00: taken = false; break;                          // F
-        case 0x01: taken = Z; break;                              // EQ
-        case 0x02: taken = !(NaN || Z || N); break;               // OGT
-        case 0x03: taken = Z || !(NaN || N); break;               // OGE
-        case 0x04: taken = N && !(NaN || Z); break;               // OLT
-        case 0x05: taken = Z || (N && !NaN); break;               // OLE
-        case 0x06: taken = !(NaN || Z); break;                    // OGL
-        case 0x07: taken = !NaN; break;                           // OR
-        case 0x08: taken = NaN; break;                            // UN
-        case 0x09: taken = NaN || Z; break;                       // UEQ
-        case 0x0A: taken = NaN || !(N || Z); break;               // UGT
-        case 0x0B: taken = NaN || Z || !N; break;                 // UGE
-        case 0x0C: taken = NaN || (N && !Z); break;               // ULT
-        case 0x0D: taken = NaN || Z || N; break;                  // ULE
-        case 0x0E: taken = !Z; break;                             // NE (SNE)
-        case 0x0F: taken = true; break;                           // T (ST)
-        case 0x10: taken = false; break;                          // SF
-        case 0x11: taken = Z; break;                              // SEQ
-        case 0x12: taken = !(NaN || Z || N); break;               // GT
-        case 0x13: taken = Z || !(NaN || N); break;               // GE
-        case 0x14: taken = N && !(NaN || Z); break;               // LT
-        case 0x15: taken = Z || (N && !NaN); break;               // LE
-        case 0x16: taken = !(NaN || Z); break;                    // GL
-        case 0x17: taken = !NaN; break;                           // GLE
-        case 0x18: taken = NaN; break;                            // NGLE
-        case 0x19: taken = NaN || Z; break;                       // NGL
-        case 0x1A: taken = NaN || !(N || Z); break;               // NLE
-        case 0x1B: taken = NaN || Z || !N; break;                 // NLT
-        case 0x1C: taken = NaN || (N && !Z); break;               // NGE
-        case 0x1D: taken = NaN || Z || N; break;                  // NGT
-        case 0x1E: taken = !Z; break;                             // NE
-        case 0x1F: taken = true; break;                           // T
-    }
-
-    if (taken) {
+    if (evalFPCond(reg.fpsr, cond)) {
         reg.pc = reg.pc0 + 2 + disp;
     }
 
@@ -426,12 +386,104 @@ Moira::execFNop(u16 opcode)
 // Stubs for instructions not yet fully implemented
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// FPU condition evaluator (shared by FBcc, FDBcc, FScc, FTRAPcc)
+// ---------------------------------------------------------------------------
+
+static bool
+evalFPCond(u32 fpsr, u8 cond)
+{
+    u32 cc = fpsr & FPSR::CC_MASK;
+    bool N = cc & FPSR::CC_N;
+    bool Z = cc & FPSR::CC_Z;
+    bool NaN = cc & FPSR::CC_NAN;
+
+    switch (cond & 0x1F) {
+        case 0x00: return false;                          // F
+        case 0x01: return Z;                              // EQ
+        case 0x02: return !(NaN || Z || N);               // OGT
+        case 0x03: return Z || !(NaN || N);               // OGE
+        case 0x04: return N && !(NaN || Z);               // OLT
+        case 0x05: return Z || (N && !NaN);               // OLE
+        case 0x06: return !(NaN || Z);                    // OGL
+        case 0x07: return !NaN;                           // OR
+        case 0x08: return NaN;                            // UN
+        case 0x09: return NaN || Z;                       // UEQ
+        case 0x0A: return NaN || !(N || Z);               // UGT
+        case 0x0B: return NaN || Z || !N;                 // UGE
+        case 0x0C: return NaN || (N && !Z);               // ULT
+        case 0x0D: return NaN || Z || N;                  // ULE
+        case 0x0E: return !Z;                             // NE
+        case 0x0F: return true;                           // T
+        default:   return false;
+    }
+}
+
 template <Core C, Instr I, Mode M, Size S> void
 Moira::execFDbcc(u16 opcode)
 {
     if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
-    // TODO: Implement FDBcc
-    execLineF<C, I, M, S>(opcode);
+
+    u32 ext = (u32)readI<C, Word>();
+    u8 cond = (u8)(ext & 0x3F);
+    i16 disp = (i16)readI<C, Word>();
+    int dn = _____________xxx(opcode);
+
+    reg.fpiar = reg.pc0;
+
+    if (!evalFPCond(reg.fpsr, cond)) {
+        i16 counter = (i16)readD<Word>(dn);
+        counter--;
+        writeD<Word>(dn, (u32)(u16)counter);
+        if (counter != -1) {
+            reg.pc = reg.pc0 + 4 + disp;  // +4 = past opcode + ext word
+        }
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
+    FINALIZE
+}
+
+template <Core C, Instr I, Mode M, Size S> void
+Moira::execFScc(u16 opcode)
+{
+    if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
+
+    u32 ext = (u32)readI<C, Word>();
+    u8 cond = (u8)(ext & 0x3F);
+    int dst = _____________xxx(opcode);
+
+    reg.fpiar = reg.pc0;
+
+    u8 result = evalFPCond(reg.fpsr, cond) ? 0xFF : 0x00;
+    writeOp<C, M, Byte>(dst, result);
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
+    FINALIZE
+}
+
+template <Core C, Instr I, Mode M, Size S> void
+Moira::execFTrapcc(u16 opcode)
+{
+    if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
+
+    u32 ext = (u32)readI<C, Word>();
+    u8 cond = (u8)(ext & 0x3F);
+
+    // Consume operand based on size
+    if constexpr (S == Word) { (void)readI<C, Word>(); }
+    else if constexpr (S == Long) { (void)readI<C, Long>(); }
+
+    reg.fpiar = reg.pc0;
+
+    if (evalFPCond(reg.fpsr, cond)) {
+        execException<C>(M68kException::TRAPV);
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
@@ -459,29 +511,94 @@ Moira::execFSave(u16 opcode)
 }
 
 template <Core C, Instr I, Mode M, Size S> void
-Moira::execFScc(u16 opcode)
-{
-    if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
-    // TODO: Implement FScc
-    execLineF<C, I, M, S>(opcode);
-    FINALIZE
-}
-
-template <Core C, Instr I, Mode M, Size S> void
-Moira::execFTrapcc(u16 opcode)
-{
-    if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
-    // TODO: Implement FTRAPcc
-    execLineF<C, I, M, S>(opcode);
-    FINALIZE
-}
-
-template <Core C, Instr I, Mode M, Size S> void
 Moira::execFMove(u16 opcode)
 {
     if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
-    // TODO: Implement FMOVE reg-to-mem
-    execLineF<C, I, M, S>(opcode);
+
+    u32 ext = (u32)readI<C, Word>();
+    auto cod = xxx_____________ (ext);
+    auto fmt = ___xxx__________ (ext);
+    auto srcReg = ______xxx_______ (ext) & 7;
+
+    reg.fpiar = reg.pc0;
+    reg.fpsr &= ~FPSR::EXC_MASK;
+
+    if (cod == 0b011) {
+        // FP register → memory
+        auto &src = reg.fp[srcReg];
+        int dst = _____________xxx(opcode);
+        u32 ea;
+
+        switch (fmt) {
+            case FPFmt::Byte: {
+                i8 val = fpToByte(src, reg.fpcr);
+                ea = computeEA<C, M, Byte>(dst);
+                writeM<C, M, Byte>(ea, (u32)(u8)val);
+                break;
+            }
+            case FPFmt::Word: {
+                i16 val = fpToWord(src, reg.fpcr);
+                ea = computeEA<C, M, Word>(dst);
+                writeM<C, M, Word>(ea, (u32)(u16)val);
+                break;
+            }
+            case FPFmt::Long: {
+                i32 val = fpToLong(src, reg.fpcr);
+                ea = computeEA<C, M, Long>(dst);
+                writeM<C, M, Long>(ea, (u32)val);
+                break;
+            }
+            case FPFmt::Single: {
+                u32 val = fpToSingle(src);
+                ea = computeEA<C, M, Long>(dst);
+                writeM<C, M, Long>(ea, val);
+                break;
+            }
+            case FPFmt::Double: {
+                u64 val = fpToDouble(src);
+                ea = computeEA<C, M, Long>(dst);
+                writeM<C, M, Long>(ea, (u32)(val >> 32));
+                writeM<C, M, Long>(ea + 4, (u32)val);
+                break;
+            }
+            case FPFmt::Extended: {
+                u32 w0 = (u32)src.exp << 16;
+                u32 w1 = (u32)(src.mantissa >> 32);
+                u32 w2 = (u32)src.mantissa;
+                ea = computeEA<C, M, Long>(dst);
+                writeM<C, M, Long>(ea, w0);
+                writeM<C, M, Long>(ea + 4, w1);
+                writeM<C, M, Long>(ea + 8, w2);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+    else if (cod == 0b100 || cod == 0b101) {
+        // FMOVE to/from FPCR/FPSR/FPIAR (system registers)
+        int dst = _____________xxx(opcode);
+        u32 regList = ___xxx__________ (ext);
+
+        if (cod == 0b101) {
+            // Memory/Dn → system register
+            u32 ea, data;
+            readOp<C, M, Long>(dst, &ea, &data);
+            if (regList & 0b100) reg.fpcr  = data;
+            if (regList & 0b010) reg.fpsr  = data;
+            if (regList & 0b001) reg.fpiar = data;
+        } else {
+            // System register → memory/Dn
+            u32 data = 0;
+            if (regList & 0b100) data = reg.fpcr;
+            else if (regList & 0b010) data = reg.fpsr;
+            else if (regList & 0b001) data = reg.fpiar;
+            writeOp<C, M, Long>(dst, data);
+        }
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
@@ -489,8 +606,82 @@ template <Core C, Instr I, Mode M, Size S> void
 Moira::execFMovem(u16 opcode)
 {
     if (!hasFPU()) { execLineF<C, I, M, S>(opcode); return; }
-    // TODO: Implement FMOVEM
-    execLineF<C, I, M, S>(opcode);
+
+    u32 ext = (u32)readI<C, Word>();
+    auto cod = xxx_____________ (ext);
+    auto mode = ___xx___________ (ext);
+    int src = _____________xxx(opcode);
+
+    reg.fpiar = reg.pc0;
+
+    if (cod == 0b110 || cod == 0b111) {
+        // FMOVEM FP registers ↔ memory
+        u8 regMask = (u8)(ext & 0xFF);
+        u32 ea = computeEA<C, M, Long>(src);
+
+        if (cod == 0b110) {
+            // Memory → FP registers (load)
+            for (int i = 7; i >= 0; i--) {
+                if (!(regMask & (1 << (7 - i)))) continue;
+                u32 w0 = readM<C, M, Long>(ea);
+                u32 w1 = readM<C, M, Long>(ea + 4);
+                u32 w2 = readM<C, M, Long>(ea + 8);
+                reg.fp[i].exp = (u16)(w0 >> 16);
+                reg.fp[i].mantissa = ((u64)w1 << 32) | w2;
+                ea += 12;
+            }
+        } else {
+            // FP registers → memory (store)
+            if constexpr (M == Mode::PD) {
+                // Pre-decrement: store in reverse order
+                for (int i = 0; i <= 7; i++) {
+                    if (!(regMask & (1 << (7 - i)))) continue;
+                    ea -= 12;
+                    u32 w0 = (u32)reg.fp[i].exp << 16;
+                    u32 w1 = (u32)(reg.fp[i].mantissa >> 32);
+                    u32 w2 = (u32)reg.fp[i].mantissa;
+                    writeM<C, M, Long>(ea, w0);
+                    writeM<C, M, Long>(ea + 4, w1);
+                    writeM<C, M, Long>(ea + 8, w2);
+                }
+                writeA(src, ea);
+            } else {
+                for (int i = 7; i >= 0; i--) {
+                    if (!(regMask & (1 << (7 - i)))) continue;
+                    u32 w0 = (u32)reg.fp[i].exp << 16;
+                    u32 w1 = (u32)(reg.fp[i].mantissa >> 32);
+                    u32 w2 = (u32)reg.fp[i].mantissa;
+                    writeM<C, M, Long>(ea, w0);
+                    writeM<C, M, Long>(ea + 4, w1);
+                    writeM<C, M, Long>(ea + 8, w2);
+                    ea += 12;
+                }
+            }
+        }
+    }
+    else if (cod == 0b100 || cod == 0b101) {
+        // FMOVEM system registers — handled by execFMove
+        // (some assemblers encode this as FMOVEM instead of FMOVE)
+        u32 regList = ___xxx__________ (ext);
+        int dst = _____________xxx(opcode);
+
+        if (cod == 0b101) {
+            u32 ea, data;
+            readOp<C, M, Long>(dst, &ea, &data);
+            if (regList & 0b100) reg.fpcr  = data;
+            if (regList & 0b010) reg.fpsr  = data;
+            if (regList & 0b001) reg.fpiar = data;
+        } else {
+            u32 data = 0;
+            if (regList & 0b100) data = reg.fpcr;
+            else if (regList & 0b010) data = reg.fpsr;
+            else if (regList & 0b001) data = reg.fpiar;
+            writeOp<C, M, Long>(dst, data);
+        }
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
