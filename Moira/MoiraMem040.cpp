@@ -33,8 +33,8 @@ void Moira::dcache040Push(int setIdx, int way) {
 }
 
 void Moira::dcache040PushLine(u32 physAddr) {
-    int idx = Cache040::index(physAddr);
-    u32 t = Cache040::tag(physAddr);
+    int idx = dcache040.index(physAddr);
+    u32 t = dcache040.tag(physAddr);
     int w = dcache040.findLine(idx, t);
     if (w >= 0) dcache040Push(idx, w);
 }
@@ -49,8 +49,8 @@ u32 Moira::dcache040Read(u32 physAddr, CacheMode cm) {
         return ((u32)read16(physAddr) << 16) | read16(physAddr + 2);
     }
 
-    int idx = Cache040::index(physAddr);
-    u32 t = Cache040::tag(physAddr);
+    int idx = dcache040.index(physAddr);
+    u32 t = dcache040.tag(physAddr);
     int slot = Cache040::slot(physAddr);
 
     // Cache lookup
@@ -103,8 +103,8 @@ void Moira::dcache040Write(u32 physAddr, u32 val, u32 mask, CacheMode cm) {
         return;
     }
 
-    int idx = Cache040::index(physAddr);
-    u32 t = Cache040::tag(physAddr);
+    int idx = dcache040.index(physAddr);
+    u32 t = dcache040.tag(physAddr);
     int slot = Cache040::slot(physAddr);
     int w = dcache040.findLine(idx, t);
 
@@ -164,8 +164,8 @@ u32 Moira::icache040Fetch(u32 physAddr) {
         return ((u32)read16(physAddr) << 16) | read16(physAddr + 2);
     }
 
-    int idx = Cache040::index(physAddr);
-    u32 t = Cache040::tag(physAddr);
+    int idx = icache040.index(physAddr);
+    u32 t = icache040.tag(physAddr);
     int slot = Cache040::slot(physAddr);
 
     int w = icache040.findLine(idx, t);

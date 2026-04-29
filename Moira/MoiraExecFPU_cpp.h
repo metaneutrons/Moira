@@ -230,6 +230,20 @@ Moira::execFGen(u16 opcode)
         FPReg src;
         fpReadSource<C, M, S>(opcode, ext, src);
 
+        // 68060: Transcendentals are unimplemented — trap to vector 11
+        if (cpuModel == Model::M68060) {
+            switch (cmd) {
+                case 0x02: case 0x06: case 0x08: case 0x09:
+                case 0x0A: case 0x0C: case 0x0D: case 0x0E: case 0x0F:
+                case 0x10: case 0x11: case 0x12: case 0x14: case 0x15:
+                case 0x16: case 0x19: case 0x1C: case 0x1D: case 0x1E: case 0x1F:
+                case 0x30: case 0x31: case 0x32: case 0x33:
+                case 0x34: case 0x35: case 0x36: case 0x37:
+                    execException<C>(M68kException(11));
+                    FINALIZE
+            }
+        }
+
         // Decode the arithmetic operation from bits 6-0
         switch (cmd) {
 
@@ -766,6 +780,11 @@ Moira::execFMovem(u16 opcode)
         u8 regMask;
         if (mode & 1) {
             // Dynamic: register list from data register Dn
+            // 68060: dynamic register list is unimplemented — trap
+            if (cpuModel == Model::M68060) {
+                execException<C>(M68kException(11));
+                FINALIZE
+            }
             int dn = (ext >> 4) & 7;
             regMask = (u8)(readD<Long>(dn) & 0xFF);
         } else {

@@ -28,6 +28,7 @@ template <Core C> void writeStackFrame1001(u16 sr, u32 pc, u32 ia, u16 nr);
 template <Core C> void writeStackFrame1010(u16 sr, u32 pc, u16 nr);
 template <Core C> void writeStackFrame1011(u16 sr, u32 pc, u32 ia, u16 nr);
 template <Core C> void writeStackFrame0111(u16 sr, u32 pc, u16 nr);
+template <Core C> void writeStackFrame0100(u16 sr, u32 pc, u16 nr);
 
 // Emulates an exception other than address errors, bus errors, and interrupts
 void execException(M68kException exc, int nr = 0);

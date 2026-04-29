@@ -55,7 +55,8 @@ enum class Model
     M68030,                 // Disassembler only
     M68EC040,               // Disassembler only
     M68LC040,               // Disassembler only
-    M68040                  // Disassembler only
+    M68040,                 // Disassembler only
+    M68060                  // 68060 with 8KB caches, partial FPU
 };
 
 // Execution cores
@@ -326,6 +327,11 @@ struct Registers {
     u32 wb3Addr = 0;           // Write-back 3 address
     u16 wb3Status = 0;         // Write-back 3 status
     u32 move16Data[4] = {};    // MOVE16 transfer buffer
+
+    // 68060 registers
+    u32 pcr = 0;               // Processor Configuration Register
+    u32 buscr = 0;             // Bus Control Register
+    u32 fslw = 0;              // Fault Status Long Word (060 bus error)
 
     // FPU registers (68881/68882/68040)
     // 80-bit extended precision stored as sign+exponent (u16) + mantissa (u64)

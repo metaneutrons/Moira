@@ -18,7 +18,7 @@ int Cache040::findLine(int setIdx, u32 t) const {
 }
 
 void Cache040::invalidateAll() {
-    for (int i = 0; i < CACHE040_SETS; i++)
+    for (int i = 0; i < numSets; i++)
         for (int w = 0; w < CACHE040_WAYS; w++)
             set[i].line[w].invalidate();
 }

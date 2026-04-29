@@ -434,8 +434,8 @@ void testCache_DCache_Invalidate() {
     // Actually: 0x1000 >> 4 = 0x100, & 0x3F = 0x00. Tag = 0x1000 & 0xFFFFFC00 = 0x00000C00? No.
     // Let's use explicit index/tag computation
     u32 addr = 0x12345670; // index = (0x12345670 >> 4) & 0x3F = 0x67 & 0x3F = 0x27 = 39
-    int idx = Cache040::index(addr);
-    u32 tag = Cache040::tag(addr);
+    int idx = dc.index(addr);
+    u32 tag = dc.tag(addr);
 
     dc.set[idx].line[0].tag = tag;
     dc.set[idx].line[0].valid = true;
@@ -459,8 +459,8 @@ void testCache_ICache_Basic() {
 
     // I-cache is read-only, no dirty bits needed
     u32 addr = 0x00FC0010;
-    int idx = Cache040::index(addr);
-    u32 tag = Cache040::tag(addr);
+    int idx = ic.index(addr);
+    u32 tag = ic.tag(addr);
     int slot = Cache040::slot(addr);
 
     ic.set[idx].line[0].tag = tag;
@@ -647,8 +647,8 @@ void testCINV_DirtyDataLoss() {
 
     // Set up a dirty line
     u32 addr = 0x00001000;
-    int idx = Cache040::index(addr);
-    u32 tag = Cache040::tag(addr);
+    int idx = dc.index(addr);
+    u32 tag = dc.tag(addr);
 
     dc.set[idx].line[0].tag = tag;
     dc.set[idx].line[0].valid = true;
