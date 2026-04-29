@@ -56,7 +56,7 @@ enum class Model
     M68EC040,               // Full execution (no MMU)
     M68LC040,               // Full execution (no FPU)
     M68040,                 // Full execution (FPU + MMU + cache)
-    M68060                  // Full execution (8KB caches, partial FPU)
+    M68060                  // Full execution (8KB caches, FPU traps transcendentals)
 };
 
 // Execution cores
