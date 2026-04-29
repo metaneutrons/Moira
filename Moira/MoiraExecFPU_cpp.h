@@ -185,6 +185,15 @@ Moira::fpReadSource(u16 opcode, u32 ext, FPReg &src)
             src.mantissa = ((u64)w1 << 32) | w2;
             break;
         }
+        case FPFmt::Packed: {
+            // Read 96 bits packed BCD (3 longwords)
+            u32 w0, w1, w2;
+            readOp<C, M, Long>(_____________xxx(opcode), &ea, &w0);
+            readOp<C, M, Long>(_____________xxx(opcode), &ea, &w1);
+            readOp<C, M, Long>(_____________xxx(opcode), &ea, &w2);
+            fpFromPacked(src, w0, w1, w2);
+            break;
+        }
         default:
             fpSetNaN(src);
             break;
@@ -208,6 +217,9 @@ Moira::execFGen(u16 opcode)
     auto cmd = _________xxxxxxx (ext);
 
     reg.fpiar = reg.pc0;
+
+    // Sync SoftFloat state with current FPCR settings
+    fpSyncState(reg.fpcr);
 
     // Clear exception status before each operation
     reg.fpsr &= ~FPSR::EXC_MASK;
@@ -264,22 +276,22 @@ Moira::execFGen(u16 opcode)
                 fpTst(src, reg.fpsr); break;                                             // FTST
 
             // 68040 single/double precision variants
-            case 0x40: reg.fp[dstReg] = src; fpSetCC(reg.fpsr, reg.fp[dstReg]); break; // FSMOVE
-            case 0x44: reg.fp[dstReg] = src; fpSetCC(reg.fpsr, reg.fp[dstReg]); break; // FDMOVE
-            case 0x41: fpSqrt(reg.fp[dstReg] = src, reg.fpsr); break;                   // FSSQRT
-            case 0x45: fpSqrt(reg.fp[dstReg] = src, reg.fpsr); break;                   // FDSQRT
-            case 0x58: fpAbs(reg.fp[dstReg] = src, reg.fpsr); break;                    // FSABS
-            case 0x5A: fpNeg(reg.fp[dstReg] = src, reg.fpsr); break;                    // FSNEG
-            case 0x5C: fpAbs(reg.fp[dstReg] = src, reg.fpsr); break;                    // FDABS
-            case 0x5E: fpNeg(reg.fp[dstReg] = src, reg.fpsr); break;                    // FDNEG
-            case 0x60: fpDiv(reg.fp[dstReg], src, reg.fpsr); break;                     // FSDIV
-            case 0x62: fpAdd(reg.fp[dstReg], src, reg.fpsr); break;                     // FSADD
-            case 0x63: fpMul(reg.fp[dstReg], src, reg.fpsr); break;                     // FSMUL
-            case 0x64: fpDiv(reg.fp[dstReg], src, reg.fpsr); break;                     // FDDIV
-            case 0x66: fpAdd(reg.fp[dstReg], src, reg.fpsr); break;                     // FDADD
-            case 0x67: fpMul(reg.fp[dstReg], src, reg.fpsr); break;                     // FDMUL
-            case 0x68: fpSub(reg.fp[dstReg], src, reg.fpsr); break;                     // FSSUB
-            case 0x6C: fpSub(reg.fp[dstReg], src, reg.fpsr); break;                     // FDSUB
+            case 0x40: reg.fp[dstReg] = src; fpRoundToSingle(reg.fp[dstReg]); fpSetCC(reg.fpsr, reg.fp[dstReg]); break; // FSMOVE
+            case 0x44: reg.fp[dstReg] = src; fpRoundToDouble(reg.fp[dstReg]); fpSetCC(reg.fpsr, reg.fp[dstReg]); break; // FDMOVE
+            case 0x41: fpSqrt(reg.fp[dstReg] = src, reg.fpsr); fpRoundToSingle(reg.fp[dstReg]); break; // FSSQRT
+            case 0x45: fpSqrt(reg.fp[dstReg] = src, reg.fpsr); fpRoundToDouble(reg.fp[dstReg]); break; // FDSQRT
+            case 0x58: fpAbs(reg.fp[dstReg] = src, reg.fpsr); fpRoundToSingle(reg.fp[dstReg]); break;  // FSABS
+            case 0x5A: fpNeg(reg.fp[dstReg] = src, reg.fpsr); fpRoundToSingle(reg.fp[dstReg]); break;  // FSNEG
+            case 0x5C: fpAbs(reg.fp[dstReg] = src, reg.fpsr); fpRoundToDouble(reg.fp[dstReg]); break;  // FDABS
+            case 0x5E: fpNeg(reg.fp[dstReg] = src, reg.fpsr); fpRoundToDouble(reg.fp[dstReg]); break;  // FDNEG
+            case 0x60: fpDiv(reg.fp[dstReg], src, reg.fpsr); fpRoundToSingle(reg.fp[dstReg]); break;   // FSDIV
+            case 0x62: fpAdd(reg.fp[dstReg], src, reg.fpsr); fpRoundToSingle(reg.fp[dstReg]); break;   // FSADD
+            case 0x63: fpMul(reg.fp[dstReg], src, reg.fpsr); fpRoundToSingle(reg.fp[dstReg]); break;   // FSMUL
+            case 0x64: fpDiv(reg.fp[dstReg], src, reg.fpsr); fpRoundToDouble(reg.fp[dstReg]); break;   // FDDIV
+            case 0x66: fpAdd(reg.fp[dstReg], src, reg.fpsr); fpRoundToDouble(reg.fp[dstReg]); break;   // FDADD
+            case 0x67: fpMul(reg.fp[dstReg], src, reg.fpsr); fpRoundToDouble(reg.fp[dstReg]); break;   // FDMUL
+            case 0x68: fpSub(reg.fp[dstReg], src, reg.fpsr); fpRoundToSingle(reg.fp[dstReg]); break;   // FSSUB
+            case 0x6C: fpSub(reg.fp[dstReg], src, reg.fpsr); fpRoundToDouble(reg.fp[dstReg]); break;   // FDSUB
 
             // FSINCOS: sin → FPc, cos → FPn
             case 0x30: case 0x31: case 0x32: case 0x33:
@@ -303,9 +315,17 @@ Moira::execFGen(u16 opcode)
         // FMOVEM — handled by execFMovem
     }
 
+    // Check for enabled FPU exceptions
+    if (u8 vec = fpCheckExceptions(reg.fpsr, reg.fpcr)) {
+        execException<C>((M68kException)vec);
+        FINALIZE
+    }
+
     prefetch<C, POLL>();
 
-    CYCLES_68020(4)
+    // Cycle-accurate FPU timing based on instruction opcode
+    bool is040 = (cpuModel == Model::M68040 || cpuModel == Model::M68EC040 || cpuModel == Model::M68LC040);
+    CYCLES_68020(fpCycleCount((u8)cmd, is040))
 
     FINALIZE
 }
@@ -645,6 +665,25 @@ Moira::execFMove(u16 opcode)
                 writeM<C, M, Long>(ea + 8, w2);
                 break;
             }
+            case FPFmt::Packed: {
+                // k-factor from extension word bits 6-0 (static) or Dn (dynamic)
+                i32 kFactor;
+                if (ext & 0x1000) {
+                    // Dynamic: k-factor from data register
+                    int kReg = (ext >> 4) & 7;
+                    kFactor = (i32)(i8)(readD<Long>(kReg) & 0x7F);
+                } else {
+                    // Static: k-factor from extension word (7-bit signed)
+                    kFactor = (i32)(i8)((ext & 0x7F) | ((ext & 0x40) ? 0x80 : 0));
+                }
+                u32 w0, w1, w2;
+                fpToPacked(src, kFactor, w0, w1, w2);
+                ea = computeEA<C, M, Long>(dst);
+                writeM<C, M, Long>(ea, w0);
+                writeM<C, M, Long>(ea + 4, w1);
+                writeM<C, M, Long>(ea + 8, w2);
+                break;
+            }
             default:
                 break;
         }
@@ -690,7 +729,16 @@ Moira::execFMovem(u16 opcode)
 
     if (cod == 0b110 || cod == 0b111) {
         // FMOVEM FP registers ↔ memory
-        u8 regMask = (u8)(ext & 0xFF);
+        // Mode bits [12:11]: 0/2 = static list from ext word, 1/3 = dynamic from Dn
+        u8 regMask;
+        if (mode & 1) {
+            // Dynamic: register list from data register Dn
+            int dn = (ext >> 4) & 7;
+            regMask = (u8)(readD<Long>(dn) & 0xFF);
+        } else {
+            // Static: register list from extension word
+            regMask = (u8)(ext & 0xFF);
+        }
         u32 ea = computeEA<C, M, Long>(src);
 
         if (cod == 0b110) {

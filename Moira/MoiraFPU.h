@@ -189,4 +189,97 @@ void fpGetman(FPReg &dst, u32 &fpsr);
 void fpSgldiv(FPReg &dst, const FPReg &src, u32 &fpsr);
 void fpSglmul(FPReg &dst, const FPReg &src, u32 &fpsr);
 
+// ---------------------------------------------------------------------------
+// Packed BCD format conversion
+// ---------------------------------------------------------------------------
+
+void fpFromPacked(FPReg &dst, u32 w0, u32 w1, u32 w2);
+void fpToPacked(const FPReg &src, i32 kFactor, u32 &w0, u32 &w1, u32 &w2);
+
+// ---------------------------------------------------------------------------
+// Rounding precision enforcement (68040 FSxxx/FDxxx)
+// ---------------------------------------------------------------------------
+
+void fpRoundToSingle(FPReg &dst);
+void fpRoundToDouble(FPReg &dst);
+
+// ---------------------------------------------------------------------------
+// FPU exception check
+// Returns exception vector number (48-54) if an enabled exception occurred,
+// or 0 if no exception should be raised.
+// ---------------------------------------------------------------------------
+
+u8 fpCheckExceptions(u32 fpsr, u32 fpcr);
+
+// ---------------------------------------------------------------------------
+// FPU instruction cycle counts (from MC68881/68882 User's Manual, Table 9-3)
+// These are the coprocessor execution times in clock cycles.
+// The 68040 has a hardware FPU with much faster timing.
+// ---------------------------------------------------------------------------
+
+namespace FPUCycles {
+    // 68881/68882 coprocessor clock cycles (approximate)
+    static constexpr int FMOVE     = 4;
+    static constexpr int FINT      = 4;
+    static constexpr int FINTRZ    = 4;
+    static constexpr int FABS      = 4;
+    static constexpr int FNEG      = 4;
+    static constexpr int FADD      = 28;
+    static constexpr int FSUB      = 28;
+    static constexpr int FMUL      = 71;
+    static constexpr int FDIV      = 72;
+    static constexpr int FSQRT     = 109;
+    static constexpr int FMOD      = 72;
+    static constexpr int FREM      = 72;
+    static constexpr int FSCALE    = 4;
+    static constexpr int FGETEXP   = 4;
+    static constexpr int FGETMAN   = 4;
+    static constexpr int FSGLDIV   = 54;
+    static constexpr int FSGLMUL   = 53;
+    static constexpr int FCMP      = 28;
+    static constexpr int FTST      = 4;
+    static constexpr int FSIN      = 392;
+    static constexpr int FCOS      = 392;
+    static constexpr int FTAN      = 441;
+    static constexpr int FSINCOS   = 497;
+    static constexpr int FASIN     = 168;
+    static constexpr int FACOS     = 168;
+    static constexpr int FATAN     = 168;
+    static constexpr int FSINH     = 168;
+    static constexpr int FCOSH     = 168;
+    static constexpr int FTANH     = 168;
+    static constexpr int FATANH    = 168;
+    static constexpr int FETOX     = 168;
+    static constexpr int FETOXM1   = 168;
+    static constexpr int FTWOTOX   = 168;
+    static constexpr int FTENTOX   = 168;
+    static constexpr int FLOGN     = 168;
+    static constexpr int FLOGNP1   = 168;
+    static constexpr int FLOG2     = 168;
+    static constexpr int FLOG10    = 168;
+    static constexpr int FMOVECR   = 4;
+    static constexpr int FMOVEM    = 4;  // per register: +4
+    static constexpr int FBCC      = 4;
+    static constexpr int FDBCC     = 4;
+    static constexpr int FSCC      = 4;
+    static constexpr int FSAVE     = 4;
+    static constexpr int FRESTORE  = 4;
+
+    // 68040 hardware FPU (much faster)
+    static constexpr int FADD_040  = 3;
+    static constexpr int FSUB_040  = 3;
+    static constexpr int FMUL_040  = 3;
+    static constexpr int FDIV_040  = 38;
+    static constexpr int FSQRT_040 = 38;
+}
+
+// Return cycle count for an FPU opcode (cmd field, bits 6-0)
+int fpCycleCount(u8 cmd, bool is040);
+
+// ---------------------------------------------------------------------------
+// SoftFloat state management (call before operations to sync FPCR)
+// ---------------------------------------------------------------------------
+
+void fpSyncState(u32 fpcr);
+
 } // namespace moira
