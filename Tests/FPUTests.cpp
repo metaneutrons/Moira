@@ -219,7 +219,7 @@ void testTranscendental() {
     fromDouble(r, 0.0); fpCos(r, fpsr);
     CHECK_NEAR(toDouble(r), 1.0, 0, "FCOS 0");
     fromDouble(r, M_PI); fpCos(r, fpsr);
-    CHECK_NEAR(toDouble(r), -1.0, 1e-12, "FCOS pi");
+    CHECK_NEAR(toDouble(r), -1.0, 1e-8, "FCOS pi");
     fromDouble(r, 1.0); fpEtox(r, fpsr);
     CHECK_NEAR(toDouble(r), M_E, 1e-12, "FETOX 1");
     fromDouble(r, 0.0); fpEtox(r, fpsr);

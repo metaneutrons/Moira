@@ -552,49 +552,82 @@ Moira::execFSave(u16 opcode)
     SUPERVISOR_MODE_ONLY
 
     // FSAVE: save FPU internal state to memory
-    // We generate a minimal idle frame since our FPU has no pending exceptions.
+    // Frame types:
+    //   Null frame (size=0): FPU is reset/uninitialized
+    //   Idle frame: FPU has completed all operations
+    //   Busy frame: FPU has a pending exception (mid-instruction state)
     //
-    // 68040 idle frame: 4 bytes (just the header)
-    //   [version:8][0x00:8][0x0000:16]
-    //
-    // 68881/68882 idle frame: 28 bytes (header + 24 bytes internal state)
-    //   [version:8][0x18:8][0x0000:16] + 24 bytes of zeros
+    // We generate a busy frame if FPSR has exception status bits set AND
+    // the corresponding FPCR enable bits are set (exception pending).
+    // Otherwise we generate an idle frame.
 
     int dst = _____________xxx(opcode);
 
-    // Determine frame format based on CPU model
     bool is040 = (cpuModel == Model::M68040 || cpuModel == Model::M68EC040 || cpuModel == Model::M68LC040);
+    bool exceptionPending = (reg.fpsr & FPSR::EXC_MASK) & (reg.fpcr & FPCR::ENABLE_MASK);
 
     if (is040) {
-        // 68040: 4-byte idle frame
-        u32 header = 0x41000000;  // version=$41, size=0 (idle)
+        u32 frameSize;
+        u32 version = 0x41;
+        if (exceptionPending) {
+            frameSize = 0x60; // 68040 busy frame: 96 bytes
+        } else {
+            frameSize = 0x00; // 68040 idle frame: just header
+        }
+        u32 header = (version << 24) | (frameSize << 16);
+        u32 totalSize = 4 + frameSize;
+
         u32 ea = computeEA<C, M, Long>(dst);
         if constexpr (M == Mode::PD) {
-            ea -= 4;
+            ea -= totalSize;
             writeM<C, M, Long>(ea, header);
+            // Write internal state (FPIAR, exception operand, etc.)
+            if (frameSize > 0) {
+                writeM<C, M, Long>(ea + 4, reg.fpiar); // FPIAR saved in frame
+                for (u32 i = 8; i < totalSize; i += 4) writeM<C, M, Long>(ea + i, 0);
+            }
             writeA(dst, ea);
         } else {
             writeM<C, M, Long>(ea, header);
+            if (frameSize > 0) {
+                writeM<C, M, Long>(ea + 4, reg.fpiar);
+                for (u32 i = 8; i < totalSize; i += 4) writeM<C, M, Long>(ea + i, 0);
+            }
         }
     } else {
-        // 68881/68882: 28-byte idle frame
-        u32 frameSize = 0x18;  // 24 bytes of internal state
-        u32 header = (0x1F << 24) | (frameSize << 16);  // version=$1F
+        // 68881/68882
+        u32 frameSize;
+        u32 version = 0x1F;
+        if (exceptionPending) {
+            frameSize = 0xD4; // 68881/82 busy frame: 212 bytes
+        } else {
+            frameSize = 0x18; // 68881/82 idle frame: 24 bytes
+        }
+        u32 header = (version << 24) | (frameSize << 16);
+        u32 totalSize = 4 + frameSize;
 
         if constexpr (M == Mode::PD) {
             u32 ea = readA(dst);
-            ea -= 4 + frameSize;
+            ea -= totalSize;
             writeM<C, M, Long>(ea, header);
-            // Write 24 bytes of zeros (internal state — we have none)
-            for (u32 i = 4; i < 4 + frameSize; i += 4) {
-                writeM<C, M, Long>(ea + i, 0);
+            if (exceptionPending) {
+                // Busy frame: store FPIAR and exception info
+                writeM<C, M, Long>(ea + 4, reg.fpiar);
+                writeM<C, M, Long>(ea + 8, reg.fpsr);
+                for (u32 i = 12; i < totalSize; i += 4) writeM<C, M, Long>(ea + i, 0);
+            } else {
+                for (u32 i = 4; i < totalSize; i += 4) writeM<C, M, Long>(ea + i, 0);
             }
             writeA(dst, ea);
         } else {
             u32 ea = computeEA<C, M, Long>(dst);
             writeM<C, M, Long>(ea, header);
-            for (u32 i = 4; i < 4 + frameSize; i += 4) {
-                writeM<C, M, Long>(ea + i, 0);
+            if (exceptionPending) {
+                writeM<C, M, Long>(ea + 4, reg.fpiar);
+                writeM<C, M, Long>(ea + 8, reg.fpsr);
+                for (u32 i = 12; i < totalSize; i += 4) writeM<C, M, Long>(ea + i, 0);
+            } else {
+                for (u32 i = 4; i < totalSize; i += 4) writeM<C, M, Long>(ea + i, 0);
             }
         }
     }

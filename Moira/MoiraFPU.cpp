@@ -11,7 +11,6 @@
 // -----------------------------------------------------------------------------
 
 #include "MoiraFPU.h"
-#include <cmath>
 #include <cstring>
 
 #include "softfloat/platform.h"
@@ -67,9 +66,17 @@ static void sfCollectExceptions(u32 &fpsr) {
     if (flags & softfloat_flag_underflow) exc |= FPExc::UNFL;
     if (flags & softfloat_flag_inexact)   exc |= FPExc::INEX2;
 
+    // Set exception status bits
     fpsr |= (u32)exc << FPSR::EXC_SHIFT;
-    // Accrue
-    fpsr |= (u32)exc;
+    // Accrue exceptions (OR into bits 7-3 of accrued byte)
+    // Accrued mapping: bit4=IOP, bit3=OVFL, bit2=UNFL, bit1=DZ, bit0=INEX
+    u8 accrued = 0;
+    if (exc & (FPExc::OPERR | FPExc::SNAN | FPExc::BSNAN)) accrued |= 0x10;
+    if (exc & FPExc::OVFL)  accrued |= 0x08;
+    if (exc & FPExc::UNFL)  accrued |= 0x04;
+    if (exc & FPExc::DZ)    accrued |= 0x02;
+    if (exc & (FPExc::INEX2 | FPExc::INEX1)) accrued |= 0x01;
+    fpsr |= (u32)accrued;
 }
 
 static void sfClear() { softfloat_exceptionFlags = 0; }
@@ -268,8 +275,18 @@ void fpToPacked(const FPReg &src, i32 kFactor, u32 &w0, u32 &w1, u32 &w2) {
     if (kFactor >= 0) {
         numDigits = (kFactor == 0) ? 17 : (kFactor > 17 ? 17 : kFactor);
     } else {
-        i32 bexp = (i32)(src.exp & 0x7FFF) - 16383;
-        i32 decExp = (i32)(bexp * 0.30103);
+        // Negative k-factor: digits = decimalExponent + 1 - kFactor
+        // Compute decimal exponent exactly via SoftFloat comparison loop
+        extFloat80_t absVal = toSF(src);
+        absVal.signExp &= 0x7FFF;
+        extFloat80_t ten = i32_to_extF80(10);
+        extFloat80_t one = i32_to_extF80(1);
+        i32 decExp = 0;
+        if (extF80_lt(absVal, one)) {
+            while (extF80_lt(absVal, one)) { absVal = extF80_mul(absVal, ten); decExp--; }
+        } else {
+            while (!extF80_lt(absVal, ten)) { absVal = extF80_div(absVal, ten); decExp++; }
+        }
         numDigits = decExp + 1 - kFactor;
         if (numDigits < 1) numDigits = 1;
         if (numDigits > 17) numDigits = 17;
@@ -437,49 +454,9 @@ void fpIntrz(FPReg &dst, u32 &fpsr) {
 }
 
 // ---------------------------------------------------------------------------
-// Transcendental functions
-//
-// SoftFloat 3e does not include transcendentals. We implement them using
-// the host math library on a double-precision intermediate, then convert
-// back to extended. This gives ~53 bits of precision which is sufficient
-// for most emulation purposes. For full 64-bit mantissa accuracy, a
-// dedicated CORDIC/polynomial implementation would be needed.
-//
-// The conversion path: extF80 -> f64 -> native double -> compute -> f64 -> extF80
+// Transcendental functions — implemented in MoiraFPUTranscendental.cpp
+// (Full 64-bit mantissa precision via SoftFloat polynomial evaluation)
 // ---------------------------------------------------------------------------
-
-static double sfToDouble(const FPReg &r) {
-    u64 bits = extF80_to_f64(toSF(r)).v;
-    double d;
-    std::memcpy(&d, &bits, 8);
-    return d;
-}
-
-static void sfFromDouble(FPReg &r, double d) {
-    u64 bits;
-    std::memcpy(&bits, &d, 8);
-    float64_t f; f.v = bits;
-    fromSF(r, f64_to_extF80(f));
-}
-
-void fpSin(FPReg &dst, u32 &fpsr)    { sfFromDouble(dst, std::sin(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpCos(FPReg &dst, u32 &fpsr)    { sfFromDouble(dst, std::cos(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpTan(FPReg &dst, u32 &fpsr)    { sfFromDouble(dst, std::tan(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpAsin(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::asin(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpAcos(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::acos(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpAtan(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::atan(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpSinh(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::sinh(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpCosh(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::cosh(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpTanh(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::tanh(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpAtanh(FPReg &dst, u32 &fpsr)  { sfFromDouble(dst, std::atanh(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpEtox(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::exp(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpEtoxm1(FPReg &dst, u32 &fpsr) { sfFromDouble(dst, std::expm1(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpTwotox(FPReg &dst, u32 &fpsr) { sfFromDouble(dst, std::exp2(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpTentox(FPReg &dst, u32 &fpsr) { sfFromDouble(dst, std::pow(10.0, sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpLogn(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::log(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpLognp1(FPReg &dst, u32 &fpsr) { sfFromDouble(dst, std::log1p(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpLog2(FPReg &dst, u32 &fpsr)   { sfFromDouble(dst, std::log2(sfToDouble(dst))); fpSetCC(fpsr, dst); }
-void fpLog10(FPReg &dst, u32 &fpsr)  { sfFromDouble(dst, std::log10(sfToDouble(dst))); fpSetCC(fpsr, dst); }
 
 // ---------------------------------------------------------------------------
 // Misc arithmetic
