@@ -173,7 +173,27 @@ template <Core C, Instr I, Mode M, Size S> void
 Moira::execPFlush40(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
-    throw std::runtime_error("Attempt to execute an unsupported 68040 instruction.");
+    SUPERVISOR_MODE_ONLY
+
+    // 68040 PFLUSH encoding:
+    // F500+An: PFLUSH (An) — flush non-global for address
+    // F508+An: PFLUSHN (An) — flush all for address
+    // F510: PFLUSHA — flush all non-global
+    // F518: PFLUSHAN — flush all entries
+    int an = opcode & 7;
+    bool flushAll = (opcode & 0x10) != 0;
+    bool global = (opcode & 0x08) != 0;
+
+    if (flushAll) {
+        mmu040.atcFlushAll(global);
+    } else {
+        u32 addr = readA(an);
+        mmu040.atcFlush(addr, reg.sr.s, global);
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
+    FINALIZE
 }
 
 template <Core C, Instr I, Mode M, Size S> void
@@ -201,5 +221,40 @@ template <Core C, Instr I, Mode M, Size S> void
 Moira::execPTest40(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
-    throw std::runtime_error("Attempt to execute an unsupported 68040 instruction.");
+    SUPERVISOR_MODE_ONLY
+
+    // F548+An: PTESTW (An) — test write access
+    // F568+An: PTESTR (An) — test read access
+    int an = opcode & 7;
+    bool write = !(opcode & 0x20); // bit 5: 0=write, 1=read
+
+    u32 addr = readA(an);
+
+    // Flush ATC entry first (force fresh walk)
+    mmu040.atcFlush(addr, reg.sr.s, true);
+
+    // Check TTR match
+    TTRResult tr = mmu040.matchTTR(reg.dtt0, addr, reg.sr.s, write);
+    if (tr == TTRResult::NoMatch) tr = mmu040.matchTTR(reg.dtt1, addr, reg.sr.s, write);
+
+    if (tr == TTRResult::WriteProtected) {
+        reg.mmusr = MMUSR_B;
+    } else if (tr == TTRResult::Match) {
+        reg.mmusr = MMUSR_T | MMUSR_R;
+    } else if (mmu040.enabled) {
+        // Perform page table walk
+        u32 physOut;
+        u16 statusOut;
+        if (mmu040PageWalk(addr, write, reg.sr.s, physOut, statusOut)) {
+            reg.mmusr = (physOut & ~mmu040.pageMask) | statusOut;
+        } else {
+            reg.mmusr = MMUSR_B | statusOut;
+        }
+    } else {
+        reg.mmusr = MMUSR_R; // MMU disabled: always resident
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
+    FINALIZE
 }

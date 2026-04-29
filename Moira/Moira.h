@@ -10,6 +10,8 @@
 #include "MoiraConfig.h"
 #include "MoiraTypes.h"
 #include "MoiraFPU.h"
+#include "MoiraCache040.h"
+#include "MoiraMMU040.h"
 #include "MoiraDebugger.h"
 
 namespace moira {
@@ -63,6 +65,11 @@ protected:
     // The CPU's register set
     Registers reg {};
     
+    // 68040 cache and MMU state
+    Cache040 icache040 {};      // Instruction cache (4KB, 4-way)
+    Cache040 dcache040 {};      // Data cache (4KB, 4-way, write-back)
+    MMU040 mmu040 {};           // MMU with ATC and page table walker
+
     // Prefetch queue for fetching instructions
     PrefetchQueue queue {};
     
@@ -196,6 +203,18 @@ public:
     
     // Returns the address bus mask, which defines the CPU's addressable memory range
     u32 addrMask() const;
+
+    // 68040 cache operations
+    void dcache040Push(int setIdx, int way);
+    void dcache040PushLine(u32 physAddr);
+    u32  dcache040Read(u32 physAddr, CacheMode cm);
+    void dcache040Write(u32 physAddr, u32 val, u32 mask, CacheMode cm);
+    u32  icache040Fetch(u32 physAddr);
+
+    // 68040 MMU translation
+    TranslateResult mmu040Translate(u32 logAddr, bool write, bool super, bool data);
+    bool mmu040PageWalk(u32 logAddr, bool write, bool super, u32 &physOut, u16 &statusOut);
+    CacheMode mmu040CacheModeFromTTR(u32 ttr) const;
     
 protected:
     

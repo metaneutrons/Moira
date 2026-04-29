@@ -3199,7 +3199,9 @@ Moira::execMovecRcRx(u16 opcode)
         auto rc = arg & 0xFFF;
 
         if (rc != 0x000 && rc != 0x001 && rc != 0x800 && rc != 0x801 &&
-            rc != 0x002 && rc != 0x802 && rc != 0x803 && rc != 0x804) {
+            rc != 0x002 && rc != 0x802 && rc != 0x803 && rc != 0x804 &&
+            rc != 0x003 && rc != 0x004 && rc != 0x005 && rc != 0x006 &&
+            rc != 0x007 && rc != 0x805 && rc != 0x806 && rc != 0x807) {
 
             execIllegal<C, I, M, S>(opcode);
             return;
@@ -3216,6 +3218,14 @@ Moira::execMovecRcRx(u16 opcode)
         case 0x802: reg.r[dst] = getCAAR(); break;
         case 0x803: reg.r[dst] = reg.sr.m ? getSP() : getMSP(); break;
         case 0x804: reg.r[dst] = reg.sr.m ? getISP() : getSP(); break;
+        case 0x003: reg.r[dst] = reg.tc; break;
+        case 0x004: reg.r[dst] = reg.itt0; break;
+        case 0x005: reg.r[dst] = reg.itt1; break;
+        case 0x006: reg.r[dst] = reg.dtt0; break;
+        case 0x007: reg.r[dst] = reg.dtt1; break;
+        case 0x805: reg.r[dst] = reg.mmusr; break;
+        case 0x806: reg.r[dst] = reg.urp; break;
+        case 0x807: reg.r[dst] = reg.srp; break;
     }
 
     prefetch<C, POLL>();
@@ -3253,7 +3263,9 @@ Moira::execMovecRxRc(u16 opcode)
         auto reg = arg & 0xFFF;
 
         if (reg != 0x000 && reg != 0x001 && reg != 0x800 && reg != 0x801 &&
-            reg != 0x002 && reg != 0x802 && reg != 0x803 && reg != 0x804) {
+            reg != 0x002 && reg != 0x802 && reg != 0x803 && reg != 0x804 &&
+            reg != 0x003 && reg != 0x004 && reg != 0x005 && reg != 0x006 &&
+            reg != 0x007 && reg != 0x805 && reg != 0x806 && reg != 0x807) {
 
             execIllegal<C, I, M, S>(opcode);
             return;
@@ -3271,6 +3283,14 @@ Moira::execMovecRxRc(u16 opcode)
         case 0x802: setCAAR(val); break;
         case 0x803: reg.sr.m ? setSP(val) : setMSP(val); break;
         case 0x804: reg.sr.m ? setISP(val) : setSP(val); break;
+        case 0x003: reg.tc = val; mmu040.configure(val); break;
+        case 0x004: reg.itt0 = val; break;
+        case 0x005: reg.itt1 = val; break;
+        case 0x006: reg.dtt0 = val; break;
+        case 0x007: reg.dtt1 = val; break;
+        case 0x805: /* MMUSR is read-only via MOVEC */ break;
+        case 0x806: reg.urp = val; break;
+        case 0x807: reg.srp = val; break;
     }
 
     prefetch<C, POLL>();
@@ -5675,9 +5695,32 @@ template <Core C, Instr I, Mode M, Size S> void
 Moira::execCinv(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
+    SUPERVISOR_MODE_ONLY
 
-    execLineF<C, I, M, S>(opcode);
+    int cache = (opcode >> 6) & 3;   // 01=data, 10=instr, 11=both
+    int scope = (opcode >> 3) & 3;   // 01=line, 10=page, 11=all
+    int an = opcode & 7;
 
+    u32 addr = readA(an) & ~0xF;
+    u32 pageSize = (reg.tc & TCR_PAGE_8K) ? 0x2000 : 0x1000;
+
+    if (cache & 1) { // Data cache
+        switch (scope) {
+            case 1: dcache040.invalidateLine(addr); break;
+            case 2: dcache040.invalidatePage(addr, pageSize); break;
+            case 3: dcache040.invalidateAll(); break;
+        }
+    }
+    if (cache & 2) { // Instruction cache
+        switch (scope) {
+            case 1: icache040.invalidateLine(addr); break;
+            case 2: icache040.invalidatePage(addr, pageSize); break;
+            case 3: icache040.invalidateAll(); break;
+        }
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
@@ -5685,9 +5728,43 @@ template <Core C, Instr I, Mode M, Size S> void
 Moira::execCpush(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
+    SUPERVISOR_MODE_ONLY
 
-    execLineF<C, I, M, S>(opcode);
+    int cache = (opcode >> 6) & 3;
+    int scope = (opcode >> 3) & 3;
+    int an = opcode & 7;
 
+    u32 addr = readA(an) & ~0xF;
+    u32 pageSize = (reg.tc & TCR_PAGE_8K) ? 0x2000 : 0x1000;
+
+    // Push dirty D-cache lines before invalidating
+    if (cache & 1) {
+        switch (scope) {
+            case 1: dcache040PushLine(addr); dcache040.invalidateLine(addr); break;
+            case 2:
+                for (u32 off = 0; off < pageSize; off += CACHE040_LINE_SIZE) {
+                    dcache040PushLine(addr + off);
+                }
+                dcache040.invalidatePage(addr, pageSize);
+                break;
+            case 3:
+                for (int s = 0; s < CACHE040_SETS; s++)
+                    for (int w = 0; w < CACHE040_WAYS; w++)
+                        dcache040Push(s, w);
+                dcache040.invalidateAll();
+                break;
+        }
+    }
+    if (cache & 2) {
+        switch (scope) {
+            case 1: icache040.invalidateLine(addr); break;
+            case 2: icache040.invalidatePage(addr, pageSize); break;
+            case 3: icache040.invalidateAll(); break;
+        }
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
@@ -5696,8 +5773,32 @@ Moira::execMove16PiPi(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
 
-    execLineF<C, I, M, S>(opcode);
+    int ax = _____________xxx(opcode);
+    u32 ext = (u32)readI<C, Word>();
+    int ay = (ext >> 12) & 7;
 
+    u32 src = readA(ax) & ~0xF;
+    u32 dst = readA(ay) & ~0xF;
+
+    // Read 16 bytes from source
+    for (int i = 0; i < 4; i++) {
+        u32 a = src + (u32)(i << 2);
+        reg.move16Data[i] = ((u32)read16(a) << 16) | read16(a + 2);
+    }
+    // Push+invalidate destination D-cache line, write bypassing cache
+    dcache040PushLine(dst);
+    dcache040.invalidateLine(dst);
+    for (int i = 0; i < 4; i++) {
+        u32 a = dst + (u32)(i << 2);
+        write16(a, (u16)(reg.move16Data[i] >> 16));
+        write16(a + 2, (u16)reg.move16Data[i]);
+    }
+
+    writeA(ax, readA(ax) + 16);
+    writeA(ay, readA(ay) + 16);
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
@@ -5706,8 +5807,28 @@ Moira::execMove16PiAl(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
 
-    execLineF<C, I, M, S>(opcode);
+    int ax = _____________xxx(opcode);
+    u32 dst = readI<C, Long>();
 
+    u32 src = readA(ax) & ~0xF;
+    dst &= ~0xF;
+
+    for (int i = 0; i < 4; i++) {
+        u32 a = src + (u32)(i << 2);
+        reg.move16Data[i] = ((u32)read16(a) << 16) | read16(a + 2);
+    }
+    dcache040PushLine(dst);
+    dcache040.invalidateLine(dst);
+    for (int i = 0; i < 4; i++) {
+        u32 a = dst + (u32)(i << 2);
+        write16(a, (u16)(reg.move16Data[i] >> 16));
+        write16(a + 2, (u16)reg.move16Data[i]);
+    }
+
+    writeA(ax, readA(ax) + 16);
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
@@ -5716,8 +5837,28 @@ Moira::execMove16AlPi(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
 
-    execLineF<C, I, M, S>(opcode);
+    int ax = _____________xxx(opcode);
+    u32 src = readI<C, Long>();
 
+    src &= ~0xF;
+    u32 dst = readA(ax) & ~0xF;
+
+    for (int i = 0; i < 4; i++) {
+        u32 a = src + (u32)(i << 2);
+        reg.move16Data[i] = ((u32)read16(a) << 16) | read16(a + 2);
+    }
+    dcache040PushLine(dst);
+    dcache040.invalidateLine(dst);
+    for (int i = 0; i < 4; i++) {
+        u32 a = dst + (u32)(i << 2);
+        write16(a, (u16)(reg.move16Data[i] >> 16));
+        write16(a + 2, (u16)reg.move16Data[i]);
+    }
+
+    writeA(ax, readA(ax) + 16);
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
@@ -5726,8 +5867,26 @@ Moira::execMove16AiAl(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
 
-    execLineF<C, I, M, S>(opcode);
+    int ax = _____________xxx(opcode);
+    u32 dst = readI<C, Long>();
 
+    u32 src = readA(ax) & ~0xF;
+    dst &= ~0xF;
+
+    for (int i = 0; i < 4; i++) {
+        u32 a = src + (u32)(i << 2);
+        reg.move16Data[i] = ((u32)read16(a) << 16) | read16(a + 2);
+    }
+    dcache040PushLine(dst);
+    dcache040.invalidateLine(dst);
+    for (int i = 0; i < 4; i++) {
+        u32 a = dst + (u32)(i << 2);
+        write16(a, (u16)(reg.move16Data[i] >> 16));
+        write16(a + 2, (u16)reg.move16Data[i]);
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
@@ -5736,8 +5895,26 @@ Moira::execMove16AlAi(u16 opcode)
 {
     AVAILABILITY(Core::C68020)
 
-    execLineF<C, I, M, S>(opcode);
+    int ax = _____________xxx(opcode);
+    u32 src = readI<C, Long>();
 
+    src &= ~0xF;
+    u32 dst = readA(ax) & ~0xF;
+
+    for (int i = 0; i < 4; i++) {
+        u32 a = src + (u32)(i << 2);
+        reg.move16Data[i] = ((u32)read16(a) << 16) | read16(a + 2);
+    }
+    dcache040PushLine(dst);
+    dcache040.invalidateLine(dst);
+    for (int i = 0; i < 4; i++) {
+        u32 a = dst + (u32)(i << 2);
+        write16(a, (u16)(reg.move16Data[i] >> 16));
+        write16(a + 2, (u16)reg.move16Data[i]);
+    }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
     FINALIZE
 }
 
