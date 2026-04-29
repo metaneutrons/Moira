@@ -104,8 +104,8 @@ namespace FPFmt {
 // Queries
 inline bool fpIsZero(const FPReg &r)     { return (r.exp & 0x7FFF) == 0 && r.mantissa == 0; }
 inline bool fpIsNeg(const FPReg &r)      { return r.exp & 0x8000; }
-inline bool fpIsInf(const FPReg &r)      { return (r.exp & 0x7FFF) == FP_EXP_MAX && r.mantissa == 0; }
-inline bool fpIsNaN(const FPReg &r)      { return (r.exp & 0x7FFF) == FP_EXP_MAX && r.mantissa != 0; }
+inline bool fpIsInf(const FPReg &r)      { return (r.exp & 0x7FFF) == FP_EXP_MAX && (r.mantissa == 0 || r.mantissa == 0x8000000000000000ULL); }
+inline bool fpIsNaN(const FPReg &r)      { return (r.exp & 0x7FFF) == FP_EXP_MAX && r.mantissa != 0 && r.mantissa != 0x8000000000000000ULL; }
 inline bool fpIsSNaN(const FPReg &r)     { return fpIsNaN(r) && !(r.mantissa & (1ULL << 62)); }
 
 // Set FPSR condition codes from an FP value
