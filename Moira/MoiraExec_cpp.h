@@ -3199,7 +3199,9 @@ Moira::execMovecRcRx(u16 opcode)
         auto rc = arg & 0xFFF;
 
         if (rc != 0x000 && rc != 0x001 && rc != 0x800 && rc != 0x801 &&
-            rc != 0x002 && rc != 0x802 && rc != 0x803 && rc != 0x804) {
+            rc != 0x002 && rc != 0x802 && rc != 0x803 && rc != 0x804 &&
+            rc != 0x003 && rc != 0x004 && rc != 0x005 && rc != 0x006 &&
+            rc != 0x007 && rc != 0x805 && rc != 0x806 && rc != 0x807) {
 
             execIllegal<C, I, M, S>(opcode);
             return;
@@ -3216,6 +3218,14 @@ Moira::execMovecRcRx(u16 opcode)
         case 0x802: reg.r[dst] = getCAAR(); break;
         case 0x803: reg.r[dst] = reg.sr.m ? getSP() : getMSP(); break;
         case 0x804: reg.r[dst] = reg.sr.m ? getISP() : getSP(); break;
+        case 0x003: reg.r[dst] = reg.tc; break;
+        case 0x004: reg.r[dst] = reg.itt0; break;
+        case 0x005: reg.r[dst] = reg.itt1; break;
+        case 0x006: reg.r[dst] = reg.dtt0; break;
+        case 0x007: reg.r[dst] = reg.dtt1; break;
+        case 0x805: reg.r[dst] = reg.mmusr; break;
+        case 0x806: reg.r[dst] = reg.urp; break;
+        case 0x807: reg.r[dst] = reg.srp; break;
     }
 
     prefetch<C, POLL>();
@@ -3253,7 +3263,9 @@ Moira::execMovecRxRc(u16 opcode)
         auto reg = arg & 0xFFF;
 
         if (reg != 0x000 && reg != 0x001 && reg != 0x800 && reg != 0x801 &&
-            reg != 0x002 && reg != 0x802 && reg != 0x803 && reg != 0x804) {
+            reg != 0x002 && reg != 0x802 && reg != 0x803 && reg != 0x804 &&
+            reg != 0x003 && reg != 0x004 && reg != 0x005 && reg != 0x006 &&
+            reg != 0x007 && reg != 0x805 && reg != 0x806 && reg != 0x807) {
 
             execIllegal<C, I, M, S>(opcode);
             return;
@@ -3271,6 +3283,14 @@ Moira::execMovecRxRc(u16 opcode)
         case 0x802: setCAAR(val); break;
         case 0x803: reg.sr.m ? setSP(val) : setMSP(val); break;
         case 0x804: reg.sr.m ? setISP(val) : setSP(val); break;
+        case 0x003: reg.tc = val; mmu040.configure(val); break;
+        case 0x004: reg.itt0 = val; break;
+        case 0x005: reg.itt1 = val; break;
+        case 0x006: reg.dtt0 = val; break;
+        case 0x007: reg.dtt1 = val; break;
+        case 0x805: /* MMUSR is read-only via MOVEC */ break;
+        case 0x806: reg.urp = val; break;
+        case 0x807: reg.srp = val; break;
     }
 
     prefetch<C, POLL>();

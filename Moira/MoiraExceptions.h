@@ -17,6 +17,7 @@
  *  1001   Coprocessor mid-instruction                  X      X
  *  1010   Short bus fault                              X      X
  *  1011   Long bus fault                               X      X
+ *  0111   68040 access error                                         X
  */
 template <Core C> void writeStackFrameAEBE(StackFrame &frame);
 template <Core C> void writeStackFrame0000(u16 sr, u32 pc, u16 nr);
@@ -26,6 +27,7 @@ template <Core C> void writeStackFrame1000(StackFrame &frame, u16 sr, u32 pc, u3
 template <Core C> void writeStackFrame1001(u16 sr, u32 pc, u32 ia, u16 nr);
 template <Core C> void writeStackFrame1010(u16 sr, u32 pc, u16 nr);
 template <Core C> void writeStackFrame1011(u16 sr, u32 pc, u32 ia, u16 nr);
+template <Core C> void writeStackFrame0111(u16 sr, u32 pc, u16 nr);
 
 // Emulates an exception other than address errors, bus errors, and interrupts
 void execException(M68kException exc, int nr = 0);

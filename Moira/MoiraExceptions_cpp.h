@@ -260,6 +260,61 @@ Moira::writeStackFrame1011(u16 sr, u32 pc, u32 ia, u16 nr)
 }
 
 template <Core C> void
+Moira::writeStackFrame0111(u16 sr, u32 pc, u16 nr)
+{
+    // 68040 Access Error stack frame (format $7, 60 bytes / 30 words)
+    // Pushed from bottom (high address) to top (low address)
+
+    // Push data (MOVE16 buffer) — PD3, PD2, PD1, PD0/WB1D
+    push<C, Long>(reg.move16Data[3]);
+    push<C, Long>(reg.move16Data[2]);
+    push<C, Long>(reg.move16Data[1]);
+    push<C, Long>(reg.move16Data[0]);
+
+    // Write-back 1 address (unused in our implementation)
+    push<C, Long>(0);
+
+    // Write-back 2 data
+    push<C, Long>(0);
+
+    // Write-back 2 address
+    push<C, Long>(0);
+
+    // Write-back 3 data
+    push<C, Long>(reg.wb3Data);
+
+    // Write-back 3 address
+    push<C, Long>(reg.wb3Addr);
+
+    // Fault address
+    push<C, Long>(reg.faultAddr);
+
+    // Write-back 1 status (unused)
+    push<C, Word>(0);
+
+    // Write-back 2 status (unused)
+    push<C, Word>(0);
+
+    // Write-back 3 status
+    push<C, Word>(reg.wb3Status);
+
+    // Special Status Word
+    push<C, Word>(reg.ssw040);
+
+    // Effective address
+    push<C, Long>(reg.faultAddr);
+
+    // 0111 | Vector offset
+    push<C, Word>(0x7000 | nr << 2);
+
+    // Program counter
+    push<C, Long>(pc);
+
+    // Status register
+    push<C, Word>(sr);
+}
+
+template <Core C> void
 Moira::execAddressError(StackFrame frame, int delay)
 {
     u16 status = getSR();
@@ -321,6 +376,8 @@ Moira::execBusError(StackFrame frame, int delay)
     // Write stack frame
     if (C == Core::C68000) {
         writeStackFrameAEBE<C>(frame);
+    } else if (cpuModel == Model::M68040 || cpuModel == Model::M68EC040 || cpuModel == Model::M68LC040) {
+        writeStackFrame0111<C>(status, frame.pc, 2);
     } else {
         writeStackFrame1000<C>(frame, status, frame.pc, reg.pc0, 2, frame.addr);
     }
