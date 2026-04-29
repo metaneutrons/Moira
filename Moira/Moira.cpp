@@ -136,7 +136,9 @@ Moira::hasFPU() const
 {
     switch (cpuModel) {
 
-        case Model::M68040:
+        case Model::M68020: case Model::M68EC020:
+        case Model::M68030: case Model::M68EC030:
+        case Model::M68LC040: case Model::M68040:
             return true;
 
         default:
