@@ -4,6 +4,9 @@ Moira.cpp
 MoiraDebugger.cpp
 MoiraFPU.cpp
 MoiraFPUTranscendental.cpp
+MoiraCache040.cpp
+MoiraMMU040.cpp
+MoiraMem040.cpp
 softfloat/softfloat.cpp
 )
 

@@ -309,6 +309,24 @@ struct Registers {
     u32 cacr;                   // Cache Control Register           (68020+)
     u32 caar;                   // Cache Address Register           (68020+)
 
+    // 68040 MMU registers
+    u32 tc = 0;                 // Translation Control Register
+    u32 itt0 = 0;              // Instruction Transparent Translation 0
+    u32 itt1 = 0;              // Instruction Transparent Translation 1
+    u32 dtt0 = 0;              // Data Transparent Translation 0
+    u32 dtt1 = 0;              // Data Transparent Translation 1
+    u32 urp = 0;               // User Root Pointer
+    u32 srp = 0;               // Supervisor Root Pointer
+    u32 mmusr = 0;             // MMU Status Register
+
+    // 68040 bus error state
+    u32 faultAddr = 0;         // Logical address that caused fault
+    u16 ssw040 = 0;            // 68040 Special Status Word
+    u32 wb3Data = 0;           // Write-back 3 data
+    u32 wb3Addr = 0;           // Write-back 3 address
+    u16 wb3Status = 0;         // Write-back 3 status
+    u32 move16Data[4] = {};    // MOVE16 transfer buffer
+
     // FPU registers (68881/68882/68040)
     // 80-bit extended precision stored as sign+exponent (u16) + mantissa (u64)
     struct FPReg { u16 exp = 0; u64 mantissa = 0; } fp[8];
