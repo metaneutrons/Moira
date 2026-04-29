@@ -3201,7 +3201,8 @@ Moira::execMovecRcRx(u16 opcode)
         if (rc != 0x000 && rc != 0x001 && rc != 0x800 && rc != 0x801 &&
             rc != 0x002 && rc != 0x802 && rc != 0x803 && rc != 0x804 &&
             rc != 0x003 && rc != 0x004 && rc != 0x005 && rc != 0x006 &&
-            rc != 0x007 && rc != 0x805 && rc != 0x806 && rc != 0x807) {
+            rc != 0x007 && rc != 0x805 && rc != 0x806 && rc != 0x807 &&
+            rc != 0x808 && rc != 0x008) {
 
             execIllegal<C, I, M, S>(opcode);
             return;
@@ -3226,6 +3227,8 @@ Moira::execMovecRcRx(u16 opcode)
         case 0x805: reg.r[dst] = reg.mmusr; break;
         case 0x806: reg.r[dst] = reg.urp; break;
         case 0x807: reg.r[dst] = reg.srp; break;
+        case 0x808: reg.r[dst] = reg.pcr; break;    // 68060 PCR
+        case 0x008: reg.r[dst] = reg.buscr; break;  // 68060 BUSCR
     }
 
     prefetch<C, POLL>();
@@ -3265,7 +3268,8 @@ Moira::execMovecRxRc(u16 opcode)
         if (reg != 0x000 && reg != 0x001 && reg != 0x800 && reg != 0x801 &&
             reg != 0x002 && reg != 0x802 && reg != 0x803 && reg != 0x804 &&
             reg != 0x003 && reg != 0x004 && reg != 0x005 && reg != 0x006 &&
-            reg != 0x007 && reg != 0x805 && reg != 0x806 && reg != 0x807) {
+            reg != 0x007 && reg != 0x805 && reg != 0x806 && reg != 0x807 &&
+            reg != 0x808 && reg != 0x008) {
 
             execIllegal<C, I, M, S>(opcode);
             return;
@@ -3291,6 +3295,8 @@ Moira::execMovecRxRc(u16 opcode)
         case 0x805: /* MMUSR is read-only via MOVEC */ break;
         case 0x806: reg.urp = val; break;
         case 0x807: reg.srp = val; break;
+        case 0x808: reg.pcr = val; break;    // 68060 PCR
+        case 0x008: reg.buscr = val; break;  // 68060 BUSCR
     }
 
     prefetch<C, POLL>();
@@ -5912,6 +5918,49 @@ Moira::execMove16AlAi(u16 opcode)
         write16(a, (u16)(reg.move16Data[i] >> 16));
         write16(a + 2, (u16)reg.move16Data[i]);
     }
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
+    FINALIZE
+}
+
+template <Core C, Instr I, Mode M, Size S> void
+Moira::execPlpa(u16 opcode)
+{
+    AVAILABILITY(Core::C68020)
+    SUPERVISOR_MODE_ONLY
+
+    // PLPA: Physical Load/Push Address (68060)
+    // Translates logical address in An to physical address, stores back in An
+    int an = _____________xxx(opcode);
+    bool write = (opcode >> 6) & 1; // bit 6: 0=read, 1=write
+
+    u32 logAddr = readA(an);
+    TranslateResult tr = mmu040Translate(logAddr, write, reg.sr.s, true);
+
+    if (!tr.fault) {
+        writeA(an, tr.physAddr);
+    }
+    // On fault: address register unchanged (fault is not taken for PLPA)
+
+    prefetch<C, POLL>();
+    CYCLES_68020(4)
+    FINALIZE
+}
+
+template <Core C, Instr I, Mode M, Size S> void
+Moira::execLpstop(u16 opcode)
+{
+    AVAILABILITY(Core::C68020)
+    SUPERVISOR_MODE_ONLY
+
+    // LPSTOP: Low-Power Stop (68060)
+    // Reads immediate word as new SR value, then halts until interrupt
+    u16 newSR = (u16)readI<C, Word>();
+    setSR(newSR);
+
+    // Enter stopped state (same as STOP instruction)
+    flags |= State::STOPPED;
 
     prefetch<C, POLL>();
     CYCLES_68020(4)

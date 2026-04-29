@@ -315,6 +315,28 @@ Moira::writeStackFrame0111(u16 sr, u32 pc, u16 nr)
 }
 
 template <Core C> void
+Moira::writeStackFrame0100(u16 sr, u32 pc, u16 nr)
+{
+    // 68060 Access Error stack frame (format $4, 16 bytes / 8 words)
+    // Simpler than 040's format $7 — uses FSLW instead of SSW + write-back buffers
+
+    // Fault Status Long Word (FSLW)
+    push<C, Long>(reg.fslw);
+
+    // Fault address
+    push<C, Long>(reg.faultAddr);
+
+    // 0100 | Vector offset
+    push<C, Word>(0x4000 | nr << 2);
+
+    // Program counter
+    push<C, Long>(pc);
+
+    // Status register
+    push<C, Word>(sr);
+}
+
+template <Core C> void
 Moira::execAddressError(StackFrame frame, int delay)
 {
     u16 status = getSR();
@@ -376,6 +398,8 @@ Moira::execBusError(StackFrame frame, int delay)
     // Write stack frame
     if (C == Core::C68000) {
         writeStackFrameAEBE<C>(frame);
+    } else if (cpuModel == Model::M68060) {
+        writeStackFrame0100<C>(status, frame.pc, 2);
     } else if (cpuModel == Model::M68040 || cpuModel == Model::M68EC040 || cpuModel == Model::M68LC040) {
         writeStackFrame0111<C>(status, frame.pc, 2);
     } else {

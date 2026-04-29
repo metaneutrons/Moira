@@ -361,31 +361,32 @@ void testCache_Eviction_RoundRobin() {
 
 void testCache_TagIndex_Computation() {
     SECTION("040 Cache Tag/Index/Slot Computation");
+    Cache040 dc; // Use default 040 configuration
 
     // Address 0x12345678:
     // Tag = 0x12345678 & 0xFFFFFC00 = 0x12345400
     // Index = (0x12345678 >> 4) & 0x3F = 0x1234567 & 0x3F = 0x27 = 39
     // Slot = (0x12345678 >> 2) & 3 = 0x489159E & 3 = 2
-    CHECK_EQ(Cache040::tag(0x12345678), (u32)0x12345400, "tag(0x12345678)");
-    CHECK_EQ(Cache040::index(0x12345678), 39, "index(0x12345678)");
+    CHECK_EQ(dc.tag(0x12345678), (u32)0x12345400, "tag(0x12345678)");
+    CHECK_EQ(dc.index(0x12345678), 39, "index(0x12345678)");
     CHECK_EQ(Cache040::slot(0x12345678), 2, "slot(0x12345678)");
 
     // Address 0x00000000:
-    CHECK_EQ(Cache040::tag(0x00000000), (u32)0x00000000, "tag(0x00000000)");
-    CHECK_EQ(Cache040::index(0x00000000), 0, "index(0x00000000)");
+    CHECK_EQ(dc.tag(0x00000000), (u32)0x00000000, "tag(0x00000000)");
+    CHECK_EQ(dc.index(0x00000000), 0, "index(0x00000000)");
     CHECK_EQ(Cache040::slot(0x00000000), 0, "slot(0x00000000)");
 
     // Address 0xFFFFFFFC (last longword):
-    CHECK_EQ(Cache040::tag(0xFFFFFFFC), (u32)0xFFFFFC00, "tag(0xFFFFFFFC)");
-    CHECK_EQ(Cache040::index(0xFFFFFFFC), 63, "index(0xFFFFFFFC)");
+    CHECK_EQ(dc.tag(0xFFFFFFFC), (u32)0xFFFFFC00, "tag(0xFFFFFFFC)");
+    CHECK_EQ(dc.index(0xFFFFFFFC), 63, "index(0xFFFFFFFC)");
     CHECK_EQ(Cache040::slot(0xFFFFFFFC), 3, "slot(0xFFFFFFFC)");
 
     // Adjacent lines (16 bytes apart) should have different indices
-    CHECK(Cache040::index(0x1000) != Cache040::index(0x1010), "adjacent lines: different index");
+    CHECK(dc.index(0x1000) != dc.index(0x1010), "adjacent lines: different index");
 
     // Same line, different slots
-    CHECK_EQ(Cache040::index(0x1000), Cache040::index(0x1004), "same line: same index");
-    CHECK_EQ(Cache040::index(0x1000), Cache040::index(0x100C), "same line: same index (offset 12)");
+    CHECK_EQ(dc.index(0x1000), dc.index(0x1004), "same line: same index");
+    CHECK_EQ(dc.index(0x1000), dc.index(0x100C), "same line: same index (offset 12)");
     CHECK(Cache040::slot(0x1000) != Cache040::slot(0x1004), "same line: different slots");
 }
 
@@ -399,8 +400,8 @@ void testCache_PageInvalidation() {
     int linesInserted = 0;
     for (u32 off = 0; off < 0x1000; off += 16) {
         u32 addr = pageBase + off;
-        int idx = Cache040::index(addr);
-        u32 tag = Cache040::tag(addr);
+        int idx = dc.index(addr);
+        u32 tag = dc.tag(addr);
         // Only insert if set has room (way 0)
         if (!dc.set[idx].line[0].valid) {
             dc.set[idx].line[0].tag = tag;
@@ -417,8 +418,8 @@ void testCache_PageInvalidation() {
     bool anyValid = false;
     for (u32 off = 0; off < 0x1000; off += 16) {
         u32 addr = pageBase + off;
-        int idx = Cache040::index(addr);
-        u32 tag = Cache040::tag(addr);
+        int idx = dc.index(addr);
+        u32 tag = dc.tag(addr);
         if (dc.findLine(idx, tag) >= 0) { anyValid = true; break; }
     }
     CHECK(!anyValid, "page invalidation: all lines cleared");

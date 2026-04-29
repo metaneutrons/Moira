@@ -201,6 +201,8 @@ MOIRA_DECLARE(Move16PiAl)
 MOIRA_DECLARE(Move16AlPi)
 MOIRA_DECLARE(Move16AiAl)
 MOIRA_DECLARE(Move16AlAi)
+MOIRA_DECLARE(Plpa)
+MOIRA_DECLARE(Lpstop)
 
 // Sub handlers
 template <Core C, Instr I, Mode M, Size S> void execMulsMoira(u16);
