@@ -49,14 +49,14 @@ enum class Model
 {
     M68000,                 // Cycle-exact emulation
     M68010,                 // Cycle-exact emulation
-    M68EC020,               // Non-cycle exaxt emulation
-    M68020,                 // Non-cycle exaxt emulation
-    M68EC030,               // Disassembler only
-    M68030,                 // Disassembler only
-    M68EC040,               // Disassembler only
-    M68LC040,               // Disassembler only
-    M68040,                 // Disassembler only
-    M68060                  // 68060 with 8KB caches, partial FPU
+    M68EC020,               // Non-cycle exact emulation
+    M68020,                 // Non-cycle exact emulation
+    M68EC030,               // Non-cycle exact emulation
+    M68030,                 // Non-cycle exact emulation
+    M68EC040,               // Full execution (no MMU)
+    M68LC040,               // Full execution (no FPU)
+    M68040,                 // Full execution (FPU + MMU + cache)
+    M68060                  // Full execution (8KB caches, partial FPU)
 };
 
 // Execution cores
